@@ -129,56 +129,35 @@ Analyzing the correlation between the 10 variables model, there is a high correl
                       data=trainSet, method="rf", prox=TRUE,allowParallel=TRUE, 
                       trControl=trainControl(method="cv",number=2))
 
-    # Complete model below is marked as comment 
+    # Complete model below is marked as comment
     # modFitRF <- train(classe~., data=trainSet, method="rf", prox=TRUE,allowParallel=TRUE,
-    # trControl=trainControl(method="cv",number=2))
-    print(modFitRF)
-    
+    #                   trControl=trainControl(method="cv",number=2))
+
 ```
 
 
+## Model accuracy and estimation of the out-of-sample error rate
+```{r echo = TRUE}
+    
+    execPredictions <- predict(modFitRF, newdata=testSet)
+    confMatrix <- confusionMatrix(execPredictions, testSet$classe)
+    confMatrix
+```
+The accuracy of the model with reduces variables is **99,77%**. This accuracy justify using a model with reduced variables. 
 
-    # >>>>Model accuracy
-    predictions <- predict(fitModel, newdata=testSet)
-    confusionMat <- confusionMatrix(predictions, testSet$classe)
-    confusionMat
+```{r echo = TRUE}
+    # Estimation of the out-of-sample error rate
+    errRate <- sum(testSet$classe != execPredictions) / length(testSet$classe)
+    errRate
+```
+
+The out-of-sample error rate is `r errRate`.
     
-    # >>>>>Estimation of the out-of-sample error rate
-    The train2 test set was removed and left untouched during variable selection, 
-    training and optimizing of the Random Forest algorithm. 
-    Therefore this testing subset gives an unbiased estimate of the Random Forest algorithm's
-    prediction accuracy (99.77% as calculated above). 
-    The Random Forest's out-of-sample error rate is derived by the formula 100% - Accuracy = 0.23%, 
-    or can be calculated directly by the following lines of code:
-                                                                                                                                                                                                                                                             
-    missClass = function(values, predicted) {
-        sum(predicted != values) / length(values)
-    }
-    OOS_errRate = missClass(train2$classe, predictions)
-    OOS_errRate
-    ## [1] 0.002294163
-    The out-of-sample error rate is 0.23%.
-    
-    Coursera Submission
-    We predict the classification of the 20 observations of the testing data set for Coursera's "Course Project: Submission" challenge page:
-        
-        predictions <- predict(fitModel, newdata=testing)
-    testing$classe <- predictions
-    
-    We create one .CSV file with all the results, presented in two columns (named problem_id and classe) and 20 rows of data:
-        
-        submit <- data.frame(problem_id = testing$problem_id, classe = predictions)
-    write.csv(submit, file = "coursera-submission.csv", row.names = FALSE)
-    
-    And we create twenty .TXT file that we will upload one by one in the Coursera website (the 20 files created are called problem_1.txt to problem_20.txt):
-        
-        answers = testing$classe
-    write_files = function(x){
-        n = length(x)
-        for(i in 1:n){
-            filename = paste0("problem_",i,".txt")
-            write.table(x[i], file=filename, quote=FALSE, row.names=FALSE, col.names=FALSE)
-        }
-    }
-    write_files(answers) 
- 
+## Prediction of the testing data
+```{r echo = TRUE}
+
+    testPredictions <- predict(modFitRF, newdata=testingData)
+    testingData$classe <- testPredictions
+    table(testingData$problem_id,testingData$classe)
+```    
+
