@@ -1,0 +1,184 @@
+---
+title: "Practical Machine Learning Write-Up: Weight Lifting"
+author: "Zefanja Kleuters"
+date: "25 februari 2016"
+output: html_document
+---
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Correct and incorrect exercises are classified into A, B, C, D, and E categories.These categories are stored in outcome variable **classe**.
+
+This report describes:
+
+    - how the model is built, 
+    - how cross validation is performed
+    - calculation of expected Out of Sample Error
+    - describe the choices made 
+    - use predition model to predict 20 different test cases
+
+
+## Data
+
+The training data for this project are available here: [link](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data are available here: [link](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+The data for this project come from this source: [link](http://groupware.les.inf.puc-rio.br/har).
+
+
+## Read and pre processing data
+
+The data training and test data set are read and remove non relevant variables/columns, columns containing mostly NA/empty data and zero value covariates.
+
+```{r echo = TRUE}
+    # Clear environment, set working directory and read data sets
+    rm(list=ls())
+    library(caret)
+    
+    setwd("C:/Users/Gebruiker/Documents/@Courses/RCode/08 PracticalMachineLearning/PA")
+    set.seed(83453)
+    trainingData <- read.csv("pml-training.csv", header=TRUE,sep=",", na.strings=c("NA","#DIV/0!",""))
+    testingData <- read.csv("pml-testing.csv", header=TRUE,sep=",", na.strings=c("NA","#DIV/0!",""))
+    
+    # Preprocessing the data and data clean-up
+    dim(trainingData)
+    
+    # Line below marked as comment to shorten report
+    # str(trainingData)
+    
+    # Select only data from the sensors on the belt, forearm, arm and dumbell and 
+    # classification on execises execution (classe).
+    
+    # Remove the first 6 columns (are informative)
+    trainingData <- trainingData[,7:ncol(trainingData)]
+    testingData <- testingData[,7:ncol(testingData)]
+        
+    # Check columns containing mostly NA
+    dblPart <- 0.95
+    dim(trainingData[, colSums(is.na(trainingData)) == 0] ) # No NA's
+    dim(trainingData[, colSums(is.na(trainingData)) < nrow(trainingData) * dblPart] ) # 95% NA
+    
+    # Line below marked as comment to shorten report
+    # colnames(trainingData[, colSums(is.na(trainingData)) < nrow(trainingData) * dblPart] )
+
+    # Remove columns containing mostly NA   
+    trainingData <- trainingData[, colSums(is.na(trainingData)) == 0]   
+    testingData <- testingData[, colSums(is.na(testingData)) == 0]  
+    dim(trainingData)
+    dim(testingData)
+    
+    # Removing zero value covariates.
+    nzvColumns <- nearZeroVar(trainingData) # nzv = TRUE, zeroVar = TRUE or FALSE
+
+    # nzvColumns is empty so preprocessing is done.
+    if(length(nzvColumns) > 0) {
+        trainingData <- trainingData[, -nzvColumns]
+        testingData <- testingData[, -nzvColumns]
+    }
+    dim(trainingData)
+    dim(testingData)
+
+```
+    
+
+## Building the model    
+For cross validation purposes the training data set is randomly split in a training subset (80%) and a test subset (20%). A model is built from the training subset, the test subset will only be used for testing, evaluation and accuracy measurement.
+
+```{r echo = TRUE}
+    # Breakup the training set in a training and validation data set (80/20). 
+    # Just to eliminate fitting the model to the testing data.
+    inTrain <- createDataPartition(trainingData$classe, p = 0.8, list=FALSE)
+    trainSet <- trainingData[ inTrain,]
+    testSet <- trainingData[-inTrain,]
+
+
+```
+
+### Random Forest and model simplification by reduction of elements
+```{r echo = TRUE}
+    # Training a model        
+    library(randomForest)
+    modFitRF <- randomForest(classe~., data=trainSet, importance=TRUE, ntree=100)
+
+    # Variable Importance    
+    varImpPlot(modFitRF)
+
+```
+
+To reduce the variables in the model, I select the top 10 variables from the Accuracy and Gini graphs above. The reduction of the variables is a good idea when the accuracy of the resulting model is acceptable. The 10 covariates are: "yaw_belt","roll_belt","pitch_belt", "num_window", "magnet_dumbbell_z","pitch_forearm", "magnet_dumbbell_y", "accel_dumbbell_y","roll_arm"and "roll_dumbbell".
+
+```{r echo = TRUE}
+    # Reduction of elements
+    # Correlated predictors.
+    predCorrel <- abs(cor(trainSet[,c("yaw_belt","roll_belt","pitch_belt", "num_window", "magnet_dumbbell_z",
+                                      "pitch_forearm", "magnet_dumbbell_y", "accel_dumbbell_y","roll_arm",
+                                      "roll_dumbbell")]))
+    diag(predCorrel) <- 0
+    which(abs(predCorrel)>0.8, arr.ind=TRUE)
+    max(abs(predCorrel))
+
+```
+Analyzing the correlation between the 10 variables model, there is a high correlation between **roll_belt** and **yaw_belt**. Recalculating the correlation respectively **roll_belt** and **yaw_belt**, the maximum correlation was 0.72 on either. Removing roll_belt left a correlation of 0.72 between two variables (**roll_dumbbell** and **accel_dumbbell_y**) instead of 4 variables when removing **yaw_belt**.
+
+## Building the model
+```{r echo = TRUE}
+    # Building a reduced model with a 2 fold cross validation.
+    modFitRF <- train(classe ~ roll_belt + pitch_belt + num_window + magnet_dumbbell_z + pitch_forearm +
+                      magnet_dumbbell_y + accel_dumbbell_y + roll_arm + roll_dumbbell, 
+                      data=trainSet, method="rf", prox=TRUE,allowParallel=TRUE, 
+                      trControl=trainControl(method="cv",number=2))
+
+    # Complete model below is marked as comment 
+    # modFitRF <- train(classe~., data=trainSet, method="rf", prox=TRUE,allowParallel=TRUE,
+    # trControl=trainControl(method="cv",number=2))
+    print(modFitRF)
+    
+```
+
+
+
+    # >>>>Model accuracy
+    predictions <- predict(fitModel, newdata=testSet)
+    confusionMat <- confusionMatrix(predictions, testSet$classe)
+    confusionMat
+    
+    # >>>>>Estimation of the out-of-sample error rate
+    The train2 test set was removed and left untouched during variable selection, 
+    training and optimizing of the Random Forest algorithm. 
+    Therefore this testing subset gives an unbiased estimate of the Random Forest algorithm's
+    prediction accuracy (99.77% as calculated above). 
+    The Random Forest's out-of-sample error rate is derived by the formula 100% - Accuracy = 0.23%, 
+    or can be calculated directly by the following lines of code:
+                                                                                                                                                                                                                                                             
+    missClass = function(values, predicted) {
+        sum(predicted != values) / length(values)
+    }
+    OOS_errRate = missClass(train2$classe, predictions)
+    OOS_errRate
+    ## [1] 0.002294163
+    The out-of-sample error rate is 0.23%.
+    
+    Coursera Submission
+    We predict the classification of the 20 observations of the testing data set for Coursera's "Course Project: Submission" challenge page:
+        
+        predictions <- predict(fitModel, newdata=testing)
+    testing$classe <- predictions
+    
+    We create one .CSV file with all the results, presented in two columns (named problem_id and classe) and 20 rows of data:
+        
+        submit <- data.frame(problem_id = testing$problem_id, classe = predictions)
+    write.csv(submit, file = "coursera-submission.csv", row.names = FALSE)
+    
+    And we create twenty .TXT file that we will upload one by one in the Coursera website (the 20 files created are called problem_1.txt to problem_20.txt):
+        
+        answers = testing$classe
+    write_files = function(x){
+        n = length(x)
+        for(i in 1:n){
+            filename = paste0("problem_",i,".txt")
+            write.table(x[i], file=filename, quote=FALSE, row.names=FALSE, col.names=FALSE)
+        }
+    }
+    write_files(answers) 
+ 
